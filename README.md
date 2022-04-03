@@ -38,9 +38,9 @@ Both versions are in the [samples folder](samples/) in a ZIP protected files wit
 
 ## Tools
 
-### qbot4_decstr.py
+### qbot4_tools.py
 
-[qbot4_decstr.py](tools/qbot4_decstr.py) is a standalone script and an IDA python script. In standalone mode, it has two functions
+[qbot4_tools.py](tools/qbot4_tools.py) is a standalone script and an IDA python script. In standalone mode, it has two functions
 
 * `strings`, decrypt the two strings buffer used in the sample
 * `iat`, reconstruct the IAT struct from the sample
@@ -49,7 +49,7 @@ If loaded inside IDA it will decrypt all the strings and set the decrypted value
 
 #### IDA
 
-To work inside IDA [qbot4_decstr.py](tools/qbot4_decstr.py) need to have two functions define inside the IDB
+To work inside IDA [qbot4_tools.py](tools/qbot4_tools.py) need to have two functions define inside the IDB
 
 * `GetEncStrByIdx` at `0xee6bd` 
 * `GetEncStrByIdxW` at `0xee612`
@@ -84,7 +84,7 @@ This function has two xref each one of them using a different `pBuffer`/`pKey` t
 ![GetStrByIdxBuf1](report/img/ida_getstrbyidxbuf1.png)
 
 ```console
-$ python3 qbot4_decstr.py --mode strings ../samples/587b2426964f6c64297ceae0715c2a16.unpack3.bin | head
+$ python3 qbot4_tools.py --mode strings ../samples/587b2426964f6c64297ceae0715c2a16.unpack3.bin | head
 StrBuf1,0x60aa0,0x0 b'route print'
 StrBuf1,0x60aa0,0xc b'qwinsta'
 StrBuf1,0x60aa0,0x14 b'ipconfig /all'
@@ -144,7 +144,7 @@ The python script will generate all the CRC for all the functions name in [funct
 The result product a header file that IDA can ingest [bot4_iat.h](idb/qbot4_iat.h).
 
 ```console
-$ python3 qbot4_decstr.py --mode iat ../samples/587b2426964f6c64297ceae0715c2a16.unpack3.bin  | tee qbot4_iat.h
+$ python3 qbot4_tools.py --mode iat ../samples/587b2426964f6c64297ceae0715c2a16.unpack3.bin  | tee qbot4_iat.h
 ...
 INFO:root:netapi32.dll::NetWkstaTransportAdd, 0xf2ff4858
 INFO:root:netapi32.dll::NetWkstaTransportDel, 0xe3f433c0
