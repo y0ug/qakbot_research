@@ -4,7 +4,6 @@ author: Hugo Caron
 date: 2022/03/14
 ---
 
-
 ## Summary
 
 Mostly tools created to work on **QAKBOT** to help analysis.
@@ -41,12 +40,23 @@ Both versions are in the [samples folder](samples/) in a ZIP protected files wit
 
 ### qbot4_decstr.py
 
-[](tools/qbot4_decstr.py)
-
-`qbot4_decstr.py` is a standalone script and an IDA python script. In standalone mode, it has two functions
+[qbot4_decstr.py](tools/qbot4_decstr.py) is a standalone script and an IDA python script. In standalone mode, it has two functions
 
 * `strings`, decrypt the two strings buffer used in the sample
 * `iat`, reconstruct the IAT struct from the sample
+
+If loaded inside IDA it will decrypt all the strings and set the decrypted value in comment.
+
+#### IDA
+
+To work inside IDA [qbot4_decstr.py](tools/qbot4_decstr.py) need to have two functions define inside the IDB
+
+* `GetEncStrByIdx` at `0xee6bd` 
+* `GetEncStrByIdxW` at `0xee612`
+
+Both functions are the same except the second one return a `WCHAR*` buffer.
+
+![Recovery of system info with the decrypted string in comment](report/img/ida_str_commented.png)
 
 #### Strings
 
@@ -99,11 +109,11 @@ The function in charge of that is at `0xE8087`
 
 So for each DLL we will have to create a structure like this
 
-![KERNEL32 structure declaration](report/img/ida_type_declaration_kernel32)
+![KERNEL32 structure declaration](report/img/ida_type_declaration_kernel32.png)
 
 After we can set the structure type to the pointer
 
-![Original](report/img/ida_importunresolv.png)
+![Original](report/img/ida_import_unresolv.png)
 
 ![After we apply the structure](report/img/ida_importresolv.png)
 
@@ -180,17 +190,14 @@ struct iat_ws2_32 {
 
 ### msdn_prototype.py
 
-[](tools/msdn_prototype.py)
-
-
-A small script that tries to lookup a function name in https://docs.microsoft.com and returns the prototype, library name etc...
+[msdn_prototype.py](tools/msdn_prototype.py) is small script that tries to lookup a function name in https://docs.microsoft.com and returns the prototype, library name etc...
 
 ```console
 python3 msdn_prototype.py CreateThread
 {'name': 'CreateThread', 'prototype': 'HANDLE CreateThread( LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwStackSize, LPTHREAD_START_ROUTINE lpStartAddress,  LPVOID lpParameter, DWORD dwCreationFlags, LPDWORD lpThreadId );', 'typedef': 'HANDLE (__stdcall *CreateThread)( LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwStackSize, LPTHREAD_START_ROUTINE lpStartAddress,  LPVOID lpParameter, DWORD dwCreationFlags, LPDWORD lpThreadId );', 'minimum_supported_client': 'Windows\xa0XP [desktop apps | UWP apps]', 'minimum_supported_server': 'Windows Server\xa02003 [desktop apps | UWP apps]', 'target_platform': 'Windows', 'header': 'processthreadsapi.h (include Windows Server\xa02003, Windows\xa0Vista, Windows\xa07, Windows Server\xa02008  Windows Server\xa02008\xa0R2, Windows.h)', 'library': 'Kernel32.lib; WindowsPhoneCore.lib on Windows Phone 8.1', 'dll': 'Kernel32.dll; KernelBase.dll on Windows Phone 8.1'}
 ```
 
-During the building of the script, I found  [](https://github.com/MicrosoftDocs/sdk-api) but the prototype was not easily accessible
+During the building of the script, I found  [https://github.com/MicrosoftDocs/sdk-api](https://github.com/MicrosoftDocs/sdk-api) but the prototype was not easily accessible
 
 It uses `requests_cache`  so it caches results inside db, is possible to just use `requests`.
 
