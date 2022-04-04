@@ -6,6 +6,10 @@
 
 import sys, logging, os, argparse
 import io, struct
+import pefile
+import hashlib
+from Crypto.Cipher import ARC4
+import socket
 
 import msdn_prototype
 
@@ -26,16 +30,21 @@ strs_offsets = {
 
 crc_table_fo = 0x52fb8
 
+crc_table =    [ 0x00000000, 0x1db71064, 0x3b6e20c8, 0x26d930ac,
+    0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c,
+    0xedb88320, 0xf00f9344, 0xd6d6a3e8, 0xcb61b38c,
+    0x9b64c2b0, 0x86d3d2d4, 0xa00ae278, 0xbdbdf21c]
+
 import_offsets = {
-    'kernel32.dll': [0x5b398, 312, 0xb49],
-    'ntdll.dll': [0x5b530, 40, 0x43b],
-    'user32.dll': [0x5b4d8, 84, 0x4C9],
-    'netapi32.dll': [0x5b630, 24, 0x82D],
-    'advapi32.dll': [0x5b560, 204, 0x5A9],
-    'shlwapi.dll': [0x5b658, 44, 0xCC7],
-    'shell32.dll': [0x5b64c, 8, 0xAE8],
-    'userenv.dll': [0x5b69c, 4, 0xFA9],
-    'ws2_32.dll': [0x5b688, 16, 0xB3E],
+    'kernel32.dll': [0x5b398, 312],
+    'ntdll.dll': [0x5b530, 40],
+    'user32.dll': [0x5b4d8, 84],
+    'netapi32.dll': [0x5b630, 24],
+    'advapi32.dll': [0x5b560, 204],
+    'shlwapi.dll': [0x5b658, 44],
+    'shell32.dll': [0x5b64c, 8],
+    'userenv.dll': [0x5b69c, 4],
+    'ws2_32.dll': [0x5b688, 16],
 }
 
 def DecStrAtIdx(data, key, idx):
@@ -61,16 +70,16 @@ def DecAllStr(data, key):
             cur.append(x)
     return out
 
-def qbot4_crc(table, name, seed=0):
+def qbot4_crc(name, seed=0):
     x = ~seed & 0xffffffff
     for c in name:
         z = (c ^ x)
-        y = table[z & 0xf] ^ (z >> 4) 
-        x = table[y & 0xf] ^ (y >> 4)
+        y = crc_table[z & 0xf] ^ (z >> 4) 
+        x = crc_table[y & 0xf] ^ (y >> 4)
         logging.debug(f'CRC c: {c:x} z: {z:x} y: {y:x} x: {x:x}')
     return ~x & 0xffffffff
 
-def qbot4_genlookup(table):
+def qbot4_genlookup():
     key = 0x218FE95B
     fn = os.path.join(os.path.dirname(__file__), 'function_names.txt')
     dlls = []
@@ -79,25 +88,41 @@ def qbot4_genlookup(table):
         dll, fn = l.strip('\r\n').split('::')
         if dll not in dlls:
             dlls.append(dll)
-            x = qbot4_crc(table, dll.encode()) ^ key
+            x = qbot4_crc(dll.encode()) ^ key
             crc_lookup[x] = dll
             logging.info(f'{dll}, 0x{x:08x}')
 
-        x = qbot4_crc(table, fn.encode()) ^ key
+        x = qbot4_crc(fn.encode()) ^ key
         crc_lookup[x] = fn
         logging.info(f'{dll}::{fn}, 0x{x:08x}')
     return crc_lookup
 
-def cli():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', nargs='?', choices=['strings', 'iat' ])
-    parser.add_argument('filename', type=argparse.FileType('rb'))
-    args = parser.parse_args()
+def qbot4_decode_ips(fp):
+    hosts = []
+    while True:
+        data = fp.read(7)
+        if not data: break
+        flag, ip_dword, port = struct.unpack('>BIH', data)
+        if ip_dword == 0: break
+        ip = socket.inet_ntoa(struct.pack(">I", ip_dword))
+        hosts.append( f'{ip:s}:{port:d}')
+    return hosts
 
-    fp = args.filename
+class QakbotTools(object):
+    def __init__(self):
+        cmds = [ c  for c in dir(self) if not c.startswith('_')]
 
-    #out = DecStrAtIdx(data, key, idx)
-    if args.mode == "strings":
+        parser = argparse.ArgumentParser(description='Qakbot multitools')
+        parser.add_argument('command', help='Subcommand to run', choices=cmds)
+        args = parser.parse_args(sys.argv[1:2])
+        getattr(self, args.command)()
+
+    def strings(self):
+        parser = argparse.ArgumentParser(description='decrypt all the strings')
+        parser.add_argument('-f', '--filename', required=True)
+        args = parser.parse_args(sys.argv[2:])
+
+        fp = open(args.filename,'rb')
         for name, offset in strs_offsets.items():
             fp.seek(offset['data'][0])
             data = fp.read(offset['data'][1])
@@ -107,15 +132,20 @@ def cli():
             for idx, str_ in DecAllStr(data, key):
                 print(f'{name},0x{offset["data"][0]:x},0x{idx:x} {str_}')
 
-    elif args.mode == "iat":
-        fp.seek(crc_table_fo)
-        table = struct.unpack('<16I', fp.read(16*4))
-        crc_lookup = qbot4_genlookup(table)
+    def iat(self):
+        parser = argparse.ArgumentParser(description='generate IAT struct')
+        parser.add_argument('-f', '--filename', required=True)
+        args = parser.parse_args(sys.argv[2:])
+
+        fp = open(args.filename,'rb')
+        #fp.seek(crc_table_fo)
+        #crc_table = struct.unpack('<16I', fp.read(16*4))
+        crc_lookup = qbot4_genlookup()
         msdn = msdn_prototype.MsdnScrapper()
        
         for name, offset in import_offsets.items():
             fp.seek(offset[0])
-            vals = struct.unpack(f'<{offset[1]:d}I', fp.read(offset[1]*4))
+            vals = struct.unpack(f'<{int(offset[1]/4):d}I', fp.read(offset[1]))
             st = ''
             st += f'struct iat_{name[:name.rindex(".")]:s} {{\n'
             for v in vals:
@@ -130,6 +160,52 @@ def cli():
                     raise ex
             st += '};\n'
             print(st)
+
+    def config(self):
+        parser = argparse.ArgumentParser(description='dump configuration')
+        parser.add_argument('-f', '--filename', required=True)
+        args = parser.parse_args(sys.argv[2:])
+
+        d = [pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_RESOURCE"]]
+        pe = pefile.PE(args.filename, fast_load=True)
+        pe.parse_data_directories(directories=d)
+
+        rt_rcdata_idx = [ 
+            entry.id for entry in
+            pe.DIRECTORY_ENTRY_RESOURCE.entries].index(pefile.RESOURCE_TYPE['RT_RCDATA'])
+
+        rt_rcdata_directory = pe.DIRECTORY_ENTRY_RESOURCE.entries[rt_rcdata_idx]
+        i = 0
+        for e in rt_rcdata_directory.directory.entries:
+            offset = e.directory.entries[0].data.struct.OffsetToData
+            size = e.directory.entries[0].data.struct.Size
+            data = pe.get_data(offset, size)
+
+            logging.info(f'res {e.name} at 0x{offset:x} len 0x{size:x}')
+
+            # case 1
+            key = hashlib.sha1(data[:20]).digest()
+            cipher = ARC4.new(key)
+            data_ = cipher.decrypt(data[20:])
+            if hashlib.sha1(data_[20:]).digest() != data_[:20]:
+                # case2
+                key = b'\\System32\\WindowsPowerShel1\\v1.0\\powershel1.exe'
+                key = hashlib.sha1(key).digest()
+                cipher = ARC4.new(key)
+                data_ = cipher.decrypt(data)
+                if hashlib.sha1(data_[20:]).digest() != data_[:20]:
+                    logging.error('failed to decode')
+                    continue
+
+
+            data_ = data_[20:]
+            if i == 0: # text
+                sys.stdout.buffer.write(data_)
+            elif i == 1: # ips
+                print('\n'.join(qbot4_decode_ips(io.BytesIO(data_))))
+            i += 1
+
+        #print(offset, size)
 
 
 def ida_set_hexrays_comment(adr, val):
@@ -241,7 +317,7 @@ def ida_plugin():
     qbot4_ida_strdec()
 
 if __name__ == "__main__":
-    mode = cli
+    mode = QakbotTools
 
     try:
         import idaapi

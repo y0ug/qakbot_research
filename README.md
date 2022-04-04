@@ -44,6 +44,7 @@ Both versions are in the [samples folder](samples/) in a ZIP protected files wit
 
 * `strings`, decrypt the two strings buffer used in the sample
 * `iat`, reconstruct the IAT struct from the sample
+* `config`, dump the configuration from the PE file resources
 
 If loaded inside IDA it will decrypt all the strings and set the decrypted value in comment.
 
@@ -84,7 +85,7 @@ This function has two xref each one of them using a different `pBuffer`/`pKey` t
 ![GetStrByIdxBuf1](report/img/ida_getstrbyidxbuf1.png)
 
 ```console
-$ python3 qbot4_tools.py --mode strings ../samples/587b2426964f6c64297ceae0715c2a16.unpack3.bin | head
+$ python3 qbot4_tools.py strings ../samples/587b2426964f6c64297ceae0715c2a16.unpack3.bin | head
 StrBuf1,0x60aa0,0x0 b'route print'
 StrBuf1,0x60aa0,0xc b'qwinsta'
 StrBuf1,0x60aa0,0x14 b'ipconfig /all'
@@ -117,10 +118,13 @@ After we can set the structure type to the pointer
 
 ![After we apply the structure](report/img/ida_importresolv.png)
 
-To recover the structure we had to set manually the FO (File Offset) and the number of elements in the array. We need to have the FO of the CRC table too.
+To recover the structure we had to set manually the FO (File Offset) and the number of elements in the array. We hardcode the `crc_table`.
 
 ```python
-crc_table_fo = 0x52fb8
+crc_table =    [ 0x00000000, 0x1db71064, 0x3b6e20c8, 0x26d930ac,
+    0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c,
+    0xedb88320, 0xf00f9344, 0xd6d6a3e8, 0xcb61b38c,
+    0x9b64c2b0, 0x86d3d2d4, 0xa00ae278, 0xbdbdf21c]
 
 import_offsets = {
     'kernel32.dll': [0x5b398, 312],
@@ -144,7 +148,7 @@ The python script will generate all the CRC for all the functions name in [funct
 The result product a header file that IDA can ingest [bot4_iat.h](idb/qbot4_iat.h).
 
 ```console
-$ python3 qbot4_tools.py --mode iat ../samples/587b2426964f6c64297ceae0715c2a16.unpack3.bin  | tee qbot4_iat.h
+$ python3 qbot4_tools.py iat ../samples/587b2426964f6c64297ceae0715c2a16.unpack3.bin  | tee qbot4_iat.h
 ...
 INFO:root:netapi32.dll::NetWkstaTransportAdd, 0xf2ff4858
 INFO:root:netapi32.dll::NetWkstaTransportDel, 0xe3f433c0
@@ -187,6 +191,27 @@ struct iat_ws2_32 {
         unsigned long (__stdcall *inet_addr)( const char *cp );
 };
 ```
+
+#### config
+
+The initial configuration is saved in the PE file resources inside two entries in `RT_RCDATA` directory. 
+
+The shortest one contains the *Botnet* and *CampaignId*. The second one is a list of `C2`
+
+```console
+$ python3 qbot4_tools.py config -f ../samples/587b2426964f6c64297ceae0715c2a16.unpack3.dll
+INFO:root:res 18270D2E at 0x680ac len 0x2e
+INFO:root:res 26F517AB at 0x680dc len 0x42e
+10=biden56
+3=1648712144
+176.67.56.94:443
+148.64.96.100:443
+47.180.172.159:443
+47.23.89.62:995
+...
+```
+
+Decryption is *RC4*, to verify the data once decrypted the 20bytes are compare against the *SHA1* of the data. The key is a SHA1 of the first 20 bytes of data or the string `\System32\WindowsPowerShel1\v1.0\powershel1.exe`.
 
 ### msdn_prototype.py
 
